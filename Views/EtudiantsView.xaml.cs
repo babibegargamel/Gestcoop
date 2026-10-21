@@ -1,15 +1,12 @@
-﻿#nullable enable
-
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Net.Mail;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace GestiCoop.Views
 {
@@ -28,35 +25,54 @@ namespace GestiCoop.Views
         public string Prenom { get; set; } = "";
         public string Programme { get; set; } = "";
         public string Courriel { get; set; } = "";
+        public string NumeroEtudiant { get; set; } = "";
+    }
+
+    public class ViewModelBase : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected void Notifier(
+            [CallerMemberName] string? propriete = null)
+        {
+            PropertyChanged?.Invoke(
+                this, new PropertyChangedEventArgs(propriete));
+        }
     }
 
     public class RelayCommand : ICommand
     {
         private readonly Action<object?> action;
+        private readonly Predicate<object?>? condition;
 
-        public RelayCommand(Action<object?> action)
+        public RelayCommand(
+            Action<object?> action,
+            Predicate<object?>? condition = null)
         {
             this.action = action;
+            this.condition = condition;
         }
 
         public bool CanExecute(object? parameter)
         {
-            return true;
+            return condition?.Invoke(parameter) ?? true;
         }
 
         public void Execute(object? parameter)
         {
-            action(parameter);
+            if (CanExecute(parameter))
+                action(parameter);
         }
 
-        public event EventHandler? CanExecuteChanged
+        public event EventHandler? CanExecuteChanged;
+
+        public void Actualiser()
         {
-            add { }
-            remove { }
+            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    public class EtudiantsViewModel : INotifyPropertyChanged
+    public class EtudiantsViewModel : ViewModelBase
     {
         private readonly ObservableCollection<Etudiant> tousLesEtudiants
             = new ObservableCollection<Etudiant>();
@@ -75,11 +91,11 @@ namespace GestiCoop.Views
 
         public string Recherche
         {
-            get { return recherche; }
+            get => recherche;
             set
             {
                 recherche = value ?? "";
-                Notifier(nameof(Recherche));
+                Notifier();
                 AppliquerFiltre();
             }
         }
@@ -88,19 +104,16 @@ namespace GestiCoop.Views
 
         public string ProgrammeFiltre
         {
-            get { return programmeFiltre; }
+            get => programmeFiltre;
             set
             {
                 programmeFiltre = value ?? "Tous les programmes";
-                Notifier(nameof(ProgrammeFiltre));
+                Notifier();
                 AppliquerFiltre();
             }
         }
 
-        public int NombreEtudiants
-        {
-            get { return Etudiants.Cast<Etudiant>().Count(); }
-        }
+        public int NombreEtudiants => Etudiants.Cast<Etudiant>().Count();
 
         public ICommand AjouterCommand { get; }
         public ICommand ModifierCommand { get; }
@@ -148,9 +161,7 @@ namespace GestiCoop.Views
                 Courriel = "x.lavoie@etud.lacite.ca"
             });
 
-            Etudiants = CollectionViewSource.GetDefaultView(
-                tousLesEtudiants);
-
+            Etudiants = CollectionViewSource.GetDefaultView(tousLesEtudiants);
             Etudiants.Filter = Filtrer;
 
             AjouterCommand = new RelayCommand(_ => Ajouter());
@@ -160,21 +171,19 @@ namespace GestiCoop.Views
 
         private bool Filtrer(object objet)
         {
-            Etudiant? etudiant = objet as Etudiant;
-
-            if (etudiant == null)
+            if (objet is not Etudiant etudiant)
                 return false;
 
             string texte = Recherche.Trim();
 
             bool correspondRecherche =
                 texte.Length == 0 ||
-                etudiant.Nom.IndexOf(
-                    texte, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                etudiant.Prenom.IndexOf(
-                    texte, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                etudiant.Courriel.IndexOf(
-                    texte, StringComparison.OrdinalIgnoreCase) >= 0;
+                etudiant.Nom.Contains(
+                    texte, StringComparison.OrdinalIgnoreCase) ||
+                etudiant.Prenom.Contains(
+                    texte, StringComparison.OrdinalIgnoreCase) ||
+                etudiant.Courriel.Contains(
+                    texte, StringComparison.OrdinalIgnoreCase);
 
             bool correspondProgramme =
                 ProgrammeFiltre == "Tous les programmes" ||
@@ -191,10 +200,10 @@ namespace GestiCoop.Views
 
         private void Ajouter()
         {
-            AjouterEtudiantWindow fenetre =
-                new AjouterEtudiantWindow();
-
-            fenetre.Owner = Application.Current.MainWindow;
+            var fenetre = new AjouterEtudiantWindow
+            {
+                Owner = Application.Current.MainWindow
+            };
 
             if (fenetre.ShowDialog() == true)
             {
@@ -205,15 +214,13 @@ namespace GestiCoop.Views
 
         private void Modifier(object? objet)
         {
-            Etudiant? etudiant = objet as Etudiant;
-
-            if (etudiant == null)
+            if (objet is not Etudiant etudiant)
                 return;
 
-            AjouterEtudiantWindow fenetre =
-                new AjouterEtudiantWindow(etudiant);
-
-            fenetre.Owner = Application.Current.MainWindow;
+            var fenetre = new AjouterEtudiantWindow(etudiant)
+            {
+                Owner = Application.Current.MainWindow
+            };
 
             if (fenetre.ShowDialog() == true)
             {
@@ -228,14 +235,11 @@ namespace GestiCoop.Views
 
         private void Supprimer(object? objet)
         {
-            Etudiant? etudiant = objet as Etudiant;
-
-            if (etudiant == null)
+            if (objet is not Etudiant etudiant)
                 return;
 
-            MessageBoxResult confirmation = MessageBox.Show(
-                "Supprimer " + etudiant.Prenom + " " +
-                etudiant.Nom + " ?",
+            var confirmation = MessageBox.Show(
+                $"Supprimer {etudiant.Prenom} {etudiant.Nom} ?",
                 "Confirmation",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -245,183 +249,6 @@ namespace GestiCoop.Views
                 tousLesEtudiants.Remove(etudiant);
                 AppliquerFiltre();
             }
-        }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        private void Notifier(string propriete)
-        {
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(propriete));
-        }
-    }
-
-    public class AjouterEtudiantWindow : Window
-    {
-        private readonly TextBox nom = new TextBox();
-        private readonly TextBox prenom = new TextBox();
-        private readonly TextBox courriel = new TextBox();
-        private readonly ComboBox programme = new ComboBox();
-
-        public Etudiant Resultat { get; private set; }
-            = new Etudiant();
-
-        public AjouterEtudiantWindow(Etudiant? existant = null)
-        {
-            Title = existant == null
-                ? "Ajouter un étudiant"
-                : "Modifier un étudiant";
-
-            Width = 440;
-            SizeToContent = SizeToContent.Height;
-            ResizeMode = ResizeMode.NoResize;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Brushes.White;
-
-            StackPanel panneau = new StackPanel
-            {
-                Margin = new Thickness(25)
-            };
-
-            Content = panneau;
-
-            panneau.Children.Add(new TextBlock
-            {
-                Text = Title,
-                FontSize = 22,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 0, 0, 18)
-            });
-
-            AjouterChamp(panneau, "Nom", nom);
-            AjouterChamp(panneau, "Prénom", prenom);
-
-            programme.ItemsSource = new[]
-            {
-                "Informatique",
-                "Génie logiciel",
-                "Cybersécurité"
-            };
-
-            programme.SelectedIndex = 0;
-
-            AjouterChamp(panneau, "Programme", programme);
-            AjouterChamp(panneau, "Courriel", courriel);
-
-            StackPanel boutons = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 15, 0, 0)
-            };
-
-            Button annuler = new Button
-            {
-                Content = "Annuler",
-                Padding = new Thickness(15, 8, 15, 8),
-                Margin = new Thickness(0, 0, 10, 0),
-                IsCancel = true
-            };
-
-            Button enregistrer = new Button
-            {
-                Content = "Enregistrer",
-                Padding = new Thickness(15, 8, 15, 8),
-                Background = new SolidColorBrush(
-                    Color.FromRgb(41, 59, 119)),
-                Foreground = Brushes.White,
-                IsDefault = true
-            };
-
-            annuler.Click += (sender, e) =>
-            {
-                DialogResult = false;
-            };
-
-            enregistrer.Click += (sender, e) =>
-            {
-                Enregistrer();
-            };
-
-            boutons.Children.Add(annuler);
-            boutons.Children.Add(enregistrer);
-            panneau.Children.Add(boutons);
-
-            if (existant != null)
-            {
-                nom.Text = existant.Nom;
-                prenom.Text = existant.Prenom;
-                courriel.Text = existant.Courriel;
-                programme.SelectedItem = existant.Programme;
-            }
-        }
-
-        private static void AjouterChamp(
-            StackPanel panneau,
-            string titre,
-            Control champ)
-        {
-            panneau.Children.Add(new TextBlock
-            {
-                Text = titre,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-
-            champ.Height = 34;
-            champ.Margin = new Thickness(0, 0, 0, 10);
-            champ.Padding = new Thickness(6);
-
-            panneau.Children.Add(champ);
-        }
-
-        private void Enregistrer()
-        {
-            if (string.IsNullOrWhiteSpace(nom.Text) ||
-                string.IsNullOrWhiteSpace(prenom.Text) ||
-                string.IsNullOrWhiteSpace(courriel.Text) ||
-                programme.SelectedItem == null)
-            {
-                MessageBox.Show(
-                    this,
-                    "Remplis tous les champs.",
-                    "Validation",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-
-                return;
-            }
-
-            string adresse = courriel.Text.Trim();
-
-            try
-            {
-                MailAddress adresseValide = new MailAddress(adresse);
-
-                if (adresseValide.Address != adresse)
-                    throw new FormatException();
-            }
-            catch (FormatException)
-            {
-                MessageBox.Show(
-                    this,
-                    "Entre une adresse courriel valide.",
-                    "Validation",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-
-                return;
-            }
-
-            Resultat = new Etudiant
-            {
-                Nom = nom.Text.Trim(),
-                Prenom = prenom.Text.Trim(),
-                Programme = programme.SelectedItem.ToString() ?? "",
-                Courriel = adresse
-            };
-
-            DialogResult = true;
         }
     }
 }
